@@ -25,7 +25,6 @@ _GENERAL_ASSISTANT_RULES = (
     "Do not ask unnecessary clarifying questions.\n"
 )
 
-
 def _extract_first_json_object(text: str) -> Optional[str]:
     if not text:
         return None
@@ -70,10 +69,6 @@ def _synthesize_fallback_draft(assistant_message: str) -> DraftOut:
 
 
 def _normalize_title_content(draft: DraftOut) -> DraftOut:
-    """
-    If the model puts "Subject: ..." or "Title: ..." at the top of content,
-    split it into the title field and clean content accordingly.
-    """
     title = (draft.title or "").strip()
     content = draft.content or ""
     lines = content.splitlines()
@@ -110,9 +105,6 @@ def _normalize_title_content(draft: DraftOut) -> DraftOut:
 
 
 def _recover_content_from_assistant_message(assistant_message: str) -> str:
-    """
-    Best-effort recovery when model returns draft.title but forgets draft.content.
-    """
     text = (assistant_message or "").strip()
     if not text:
         return ""
@@ -160,9 +152,6 @@ class OllamaProvider:
         user_message: str,
         history: Optional[List[Dict[str, str]]] = None,
     ) -> DraftResponse:
-        """
-        Generate a DraftResponse. Never returns draft=None.
-        """
         system = self._pm.get_system()
         repair_prompt = self._pm.get_repair()
         history_block = _format_history(history)
@@ -190,9 +179,7 @@ class OllamaProvider:
 
             parsed = self._parse_draft_response(raw)
             if parsed and parsed.draft and not (parsed.draft.content or "").strip():
-                parsed.draft.content = _recover_content_from_assistant_message(
-                    parsed.assistant_message
-                )
+                parsed.draft.content = _recover_content_from_assistant_message(parsed.assistant_message)
             if parsed and parsed.draft and parsed.draft.content.strip():
                 parsed.draft = _normalize_title_content(parsed.draft)
                 if not (parsed.assistant_message or "").strip():

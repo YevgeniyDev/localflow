@@ -1,24 +1,27 @@
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from ..deps import get_db
-from ...storage.models import Draft
 from ...domain.enums import DraftStatus
 from ...services.approval_service import ApprovalService
+from ...storage.models import Draft
+from ..schemas import ErrorOut
+from .schemas import DraftApproveOut, DraftUpdateIn, DraftUpdateOut
 
 router = APIRouter()
 
-class DraftUpdateIn(BaseModel):
-    title: str | None = None
-    content: str | None = None
 
-@router.post("/drafts/{draft_id}/update")
+@router.post(
+    "/drafts/{draft_id}/update",
+    response_model=DraftUpdateOut,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}},
+)
 def update_draft(draft_id: str, inp: DraftUpdateIn, db: Session = Depends(get_db)):
     d = db.get(Draft, draft_id)
     if not d:
-        raise ValueError("Draft not found")
+        raise HTTPException(status_code=404, detail="Draft not found")
     if d.status != DraftStatus.drafting.value:
-        raise ValueError("Draft is locked (approved)")
+        raise HTTPException(status_code=409, detail="Draft is locked (approved)")
 
     if inp.title is not None:
         d.title = inp.title
@@ -28,10 +31,18 @@ def update_draft(draft_id: str, inp: DraftUpdateIn, db: Session = Depends(get_db
     db.commit()
     return {"ok": True}
 
-@router.post("/drafts/{draft_id}/approve")
+
+@router.post(
+    "/drafts/{draft_id}/approve",
+    response_model=DraftApproveOut,
+    responses={404: {"model": ErrorOut}, 409: {"model": ErrorOut}},
+)
 def approve_draft(draft_id: str, db: Session = Depends(get_db)):
     d = db.get(Draft, draft_id)
     if not d:
-        raise ValueError("Draft not found")
-    approval = ApprovalService(db).approve(d)
+        raise HTTPException(status_code=404, detail="Draft not found")
+    try:
+        approval = ApprovalService(db).approve(d)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return {"approval_id": approval.id}

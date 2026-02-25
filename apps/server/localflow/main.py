@@ -4,8 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from localflow.api.router import router as api_router
 from localflow.core.config import Settings
@@ -66,6 +68,54 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LocalFlow Assistant", lifespan=lifespan)
 
+
+def _error_code(status_code: int) -> str:
+    if status_code == 400:
+        return "INVALID_REQUEST"
+    if status_code == 401:
+        return "UNAUTHORIZED"
+    if status_code == 403:
+        return "FORBIDDEN"
+    if status_code == 404:
+        return "NOT_FOUND"
+    if status_code == 409:
+        return "CONFLICT"
+    if status_code == 422:
+        return "VALIDATION_ERROR"
+    if status_code >= 500:
+        return "INTERNAL_ERROR"
+    return "ERROR"
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail, "error_code": _error_code(exc.status_code)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Validation error",
+            "error_code": _error_code(422),
+            "errors": exc.errors(),
+        },
+    )
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(_: Request, exc: ValueError):
+    return JSONResponse(
+        status_code=400,
+        content={"detail": str(exc), "error_code": _error_code(400)},
+    )
+
+
 # Dev CORS for Vite
 settings_for_cors = Settings()
 dev_origins = getattr(settings_for_cors, "cors_origins", None) or [
@@ -80,10 +130,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Root hint endpoint
+
 @app.get("/")
 def root():
     return {"ok": True, "hint": "Try /v1/health"}
 
-# API routes
+
 app.include_router(api_router)

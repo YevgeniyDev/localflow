@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
 from localflow.api.deps import get_db
-from localflow.storage.models import Conversation, Message, Draft
+from localflow.storage.models import Approval, Conversation, Draft, Execution, Message
 
 router = APIRouter(tags=["conversations"])
 
@@ -16,7 +17,6 @@ router = APIRouter(tags=["conversations"])
 class ConversationListItem(BaseModel):
     id: str
     created_at: datetime
-    # Derived: last activity time (latest message time, else created_at)
     last_activity_at: datetime
     title: str = Field(..., description="Derived title for display")
     last_message_preview: str
@@ -55,17 +55,49 @@ class ConversationDetailOut(BaseModel):
     latest_draft: Optional[DraftOut] = None
 
 
+class ExecutionAuditOut(BaseModel):
+    id: str
+    tool_name: str
+    status: str
+    created_at: datetime
+    request: Any
+    result: Any
+
+
+class ApprovalAuditOut(BaseModel):
+    id: str
+    draft_id: str
+    created_at: datetime
+    draft_hash: str
+    toolplan_hash: str | None
+    executions: List[ExecutionAuditOut]
+
+
+class ConversationAuditOut(BaseModel):
+    conversation_id: str
+    approvals: List[ApprovalAuditOut]
+
+
 def _preview(text: str, n: int = 90) -> str:
     s = (text or "").strip().replace("\n", " ")
-    return s if len(s) <= n else s[:n] + "…"
+    return s if len(s) <= n else s[:n] + "..."
 
 
 def _derive_title(messages: List[Message]) -> str:
     for m in messages:
         if (m.role or "").lower() == "user" and (m.content or "").strip():
             s = m.content.strip().replace("\n", " ")
-            return s if len(s) <= 60 else s[:60] + "…"
+            return s if len(s) <= 60 else s[:60] + "..."
     return "Conversation"
+
+
+def _json_or_raw(value: str) -> Any:
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except Exception:
+        return {"raw": value}
 
 
 @router.get("/conversations", response_model=ConversationListOut)
@@ -76,7 +108,6 @@ def list_conversations(
 ) -> ConversationListOut:
     total = db.query(Conversation).count()
 
-    # Compute last activity per conversation as max(Message.created_at)
     last_activity_subq = (
         db.query(
             Message.conversation_id.label("cid"),
@@ -86,7 +117,6 @@ def list_conversations(
         .subquery()
     )
 
-    # Sort by last activity desc (NULLS LAST), fallback to conversation.created_at
     rows = (
         db.query(Conversation, last_activity_subq.c.last_activity_at)
         .outerjoin(last_activity_subq, last_activity_subq.c.cid == Conversation.id)
@@ -101,7 +131,6 @@ def list_conversations(
 
     items: List[ConversationListItem] = []
     for c, last_activity_at in rows:
-        # Load first ~200 messages for title derivation
         msgs: List[Message] = (
             db.query(Message)
             .filter(Message.conversation_id == c.id)
@@ -181,9 +210,53 @@ def get_conversation(
     return ConversationDetailOut(
         id=c.id,
         created_at=c.created_at,
-        messages=[
-            MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
-            for m in messages
-        ],
+        messages=[MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at) for m in messages],
         latest_draft=latest_draft_out,
     )
+
+
+@router.get("/conversations/{conversation_id}/audit", response_model=ConversationAuditOut)
+def get_conversation_audit(conversation_id: str, db=Depends(get_db)) -> ConversationAuditOut:
+    c: Optional[Conversation] = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    approvals = (
+        db.query(Approval)
+        .join(Draft, Draft.id == Approval.draft_id)
+        .filter(Draft.conversation_id == conversation_id)
+        .order_by(Approval.created_at.asc())
+        .all()
+    )
+
+    out: List[ApprovalAuditOut] = []
+    for approval in approvals:
+        executions: List[Execution] = (
+            db.query(Execution)
+            .filter(Execution.approval_id == approval.id)
+            .order_by(Execution.created_at.asc())
+            .all()
+        )
+
+        out.append(
+            ApprovalAuditOut(
+                id=approval.id,
+                draft_id=approval.draft_id,
+                created_at=approval.created_at,
+                draft_hash=approval.draft_hash,
+                toolplan_hash=approval.toolplan_hash,
+                executions=[
+                    ExecutionAuditOut(
+                        id=e.id,
+                        tool_name=e.tool_name,
+                        status=e.status,
+                        created_at=e.created_at,
+                        request=_json_or_raw(e.request_json),
+                        result=_json_or_raw(e.result_json),
+                    )
+                    for e in executions
+                ],
+            )
+        )
+
+    return ConversationAuditOut(conversation_id=conversation_id, approvals=out)

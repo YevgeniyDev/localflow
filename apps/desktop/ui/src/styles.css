@@ -1,0 +1,433 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+:root {
+  --bg: #fff8fb;
+  --bg-2: #ffeef5;
+  --ink: #20121b;
+  --ink-soft: #6f5565;
+  --card: rgba(255, 247, 252, 0.9);
+  --card-strong: rgba(255, 250, 253, 0.98);
+  --line: rgba(103, 45, 78, 0.2);
+  --line-strong: rgba(186, 89, 144, 0.45);
+  --primary: #de6faa;
+  --primary-strong: #c75395;
+  --primary-ink: #4b1e36;
+  --accent: #f5a7cd;
+  --accent-ink: #381626;
+  --error: #b23159;
+  --ok: #24744f;
+  --shadow: 0 18px 40px rgba(90, 28, 63, 0.16);
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 8% 10%, rgba(245, 167, 205, 0.32), transparent 36%),
+    radial-gradient(circle at 88% 88%, rgba(222, 111, 170, 0.24), transparent 38%),
+    linear-gradient(135deg, var(--bg) 0%, var(--bg-2) 55%, #ffe6f0 100%);
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(186, 89, 144, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(186, 89, 144, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(circle at center, black 35%, transparent 100%);
+}
+
+.app-shell {
+  display: grid;
+  gap: 14px;
+  height: 100vh;
+  padding: 14px;
+  overflow: hidden;
+  transition: grid-template-columns 220ms ease;
+}
+
+.app-shell--draft {
+  grid-template-columns: 340px minmax(0, 1.45fr) minmax(0, 1fr);
+}
+
+.app-shell--no-draft {
+  grid-template-columns: 340px minmax(0, 1fr);
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(11px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 10px;
+}
+
+.panel-title {
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: 0.02em;
+  font-size: 1.36rem;
+  line-height: 1;
+  margin: 0;
+  color: var(--primary-ink);
+  text-transform: uppercase;
+}
+
+.meta-line {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-family: "IBM Plex Mono", monospace;
+  padding: 10px 14px 14px;
+}
+
+.btn {
+  border: 1px solid var(--line);
+  background: var(--card-strong);
+  color: var(--ink);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  height: 36px;
+  padding: 0 14px;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(90, 28, 63, 0.18);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  color: #fff8fc;
+  border-color: transparent;
+}
+
+.btn-accent {
+  background: linear-gradient(135deg, #f7b5d7, #f09fc8);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.header-spacer {
+  margin-left: auto;
+}
+
+.history-scroll,
+.chat-scroll {
+  margin: 0 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 250, 253, 0.72);
+  padding: 10px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.history-scroll {
+  flex: 1;
+}
+
+.history-card {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 251, 253, 0.9);
+  text-align: left;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.history-card--active {
+  border-color: var(--line-strong);
+  background: linear-gradient(130deg, rgba(222, 111, 170, 0.2), rgba(255, 251, 253, 0.96));
+}
+
+.history-card__title {
+  font-size: 0.98rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.history-card__meta {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-bottom: 5px;
+}
+
+.history-card__preview {
+  font-size: 0.87rem;
+  color: #372631;
+}
+
+.chat-panel {
+  padding-bottom: 14px;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin: 0 14px;
+}
+
+.field,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 251, 253, 0.95);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.97rem;
+  padding: 10px 11px;
+  outline: none;
+}
+
+.field:focus,
+.textarea:focus {
+  border-color: rgba(199, 83, 149, 0.75);
+  box-shadow: 0 0 0 4px rgba(222, 111, 170, 0.18);
+}
+
+.chat-scroll {
+  flex: 1;
+  margin-top: 10px;
+}
+
+.chat-msg {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 253, 0.92);
+  padding: 9px 11px;
+  margin-bottom: 8px;
+}
+
+.chat-msg--assistant {
+  background: linear-gradient(135deg, rgba(222, 111, 170, 0.12), rgba(255, 252, 253, 0.95));
+}
+
+.chat-msg__role {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.chat-msg__content {
+  white-space: pre-wrap;
+  line-height: 1.35;
+}
+
+.error-banner {
+  margin: 10px 14px 0;
+  border: 1px solid rgba(178, 49, 89, 0.36);
+  background: rgba(178, 49, 89, 0.12);
+  color: var(--error);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+}
+
+.draft-panel {
+  padding-bottom: 14px;
+}
+
+.draft-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  height: 100%;
+  padding: 0 14px;
+}
+
+.label {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  color: var(--primary-ink);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  font-size: 0.83rem;
+}
+
+.textarea {
+  min-height: 220px;
+  resize: vertical;
+}
+
+.textarea--grow {
+  flex: 1;
+  min-height: 280px;
+}
+
+.draft-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.status-pill {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.status-pill--ok {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.debug-box {
+  margin-top: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--line);
+  background: rgba(255, 248, 251, 0.8);
+  padding: 8px 9px;
+  font-size: 0.74rem;
+  color: #5e3f4e;
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: 140px;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.loading-text,
+.empty-text {
+  color: var(--ink-soft);
+  font-size: 0.93rem;
+}
+
+.overlay-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background:
+    linear-gradient(145deg, rgba(84, 24, 56, 0.82), rgba(122, 44, 85, 0.75)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.06) 0,
+      rgba(255, 255, 255, 0.06) 1px,
+      transparent 1px,
+      transparent 18px
+    );
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 223, 241, 0.4);
+  color: #fff5fb;
+}
+
+.overlay-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.overlay-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.overlay-input,
+.overlay-area {
+  width: 100%;
+  border: 1px solid rgba(255, 223, 241, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(53, 16, 36, 0.35);
+  color: #fff6fb;
+  font: inherit;
+  padding: 9px 10px;
+}
+
+.overlay-input::placeholder,
+.overlay-area::placeholder {
+  color: rgba(255, 239, 248, 0.75);
+}
+
+.overlay-area {
+  flex: 1;
+  min-height: 180px;
+  resize: vertical;
+}
+
+.overlay-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 1260px) {
+  .app-shell--draft,
+  .app-shell--no-draft {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .draft-panel {
+    grid-column: 1 / -1;
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell--draft,
+  .app-shell--no-draft {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .panel {
+    min-height: 380px;
+  }
+
+  .history-scroll,
+  .chat-scroll {
+    max-height: 360px;
+  }
+
+  .textarea--grow {
+    min-height: 220px;
+  }
+}

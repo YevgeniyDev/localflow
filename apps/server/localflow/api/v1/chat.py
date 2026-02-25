@@ -1,18 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
 from ..deps import get_db, get_llm
-from ...storage.models import Conversation, Message, Draft
+from ..schemas import ErrorOut
+from .schemas import ChatIn, ChatOut
 from ...domain.enums import DraftStatus
 from ...services.approval_service import ApprovalService
+from ...storage.models import Conversation, Draft, Message
 
 router = APIRouter()
 
-class ChatIn(BaseModel):
-    conversation_id: str | None = None
-    message: str
 
-@router.post("/chat")
+def _assistant_from_draft(title: str, content: str) -> str:
+    c = (content or "").strip()
+    if c:
+        return c
+    return (title or "").strip()
+
+
+@router.post("/chat", response_model=ChatOut, responses={404: {"model": ErrorOut}, 502: {"model": ErrorOut}})
 async def chat(inp: ChatIn, db: Session = Depends(get_db), llm=Depends(get_llm)):
     if inp.conversation_id:
         conv = db.get(Conversation, inp.conversation_id)
@@ -43,6 +49,8 @@ async def chat(inp: ChatIn, db: Session = Depends(get_db), llm=Depends(get_llm))
     if not out.draft:
         raise HTTPException(status_code=502, detail="LLM generation failed: missing draft")
 
+    assistant_message = _assistant_from_draft(out.draft.title or "", out.draft.content or "")
+
     draft = Draft(
         conversation_id=conv.id,
         type="assistant",
@@ -54,18 +62,17 @@ async def chat(inp: ChatIn, db: Session = Depends(get_db), llm=Depends(get_llm))
     db.commit()
     db.refresh(draft)
 
-    # tool_plan is now a dict or None. Persist only if it matches expected structure.
     if out.tool_plan:
         tool_plan = out.tool_plan.model_dump()
         if isinstance(tool_plan.get("actions"), list):
             ApprovalService(db).upsert_tool_plan(draft, tool_plan)
 
-    db.add(Message(conversation_id=conv.id, role="assistant", content=out.assistant_message))
+    db.add(Message(conversation_id=conv.id, role="assistant", content=assistant_message))
     db.commit()
 
     return {
         "conversation_id": conv.id,
-        "assistant_message": out.assistant_message,
+        "assistant_message": assistant_message,
         "draft": {
             "id": draft.id,
             "type": draft.type,

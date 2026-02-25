@@ -50,6 +50,7 @@ export async function execute(
   approvalId: string,
   toolName: string,
   toolInput: any,
+  confirmation?: any,
 ) {
   const r = await fetch(`${BASE}/executions`, {
     method: "POST",
@@ -58,6 +59,7 @@ export async function execute(
       approval_id: approvalId,
       tool_name: toolName,
       tool_input: toolInput,
+      confirmation: confirmation ?? null,
     }),
   });
   if (!r.ok) throw new Error(await readError(r));

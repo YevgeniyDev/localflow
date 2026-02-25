@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { chat, updateDraft, approveDraft } from "../lib/api";
+import { approveDraft, chat, updateDraft } from "../lib/api";
 
 export function Overlay() {
   const [msg, setMsg] = useState("");
@@ -47,82 +47,60 @@ export function Overlay() {
   }
 
   return (
-    <div
-      style={{
-        height: "100vh",
-        padding: 10,
-        background: "rgba(20,20,20,0.55)",
-        borderRadius: 14,
-        border: "1px solid rgba(255,255,255,0.15)",
-        backdropFilter: "blur(8px)",
-        color: "white",
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
-      <div data-tauri-drag-region style={{ fontWeight: 800, cursor: "move" }}>
+    <div className="overlay-shell">
+      <div className="overlay-title" data-tauri-drag-region>
         LocalFlow Overlay
       </div>
 
-      <div style={{ display: "flex", gap: 6 }}>
+      <div className="overlay-row">
         <input
-          style={{ flex: 1 }}
+          className="overlay-input"
           value={msg}
           onChange={(e) => setMsg(e.target.value)}
-          placeholder="Quick ask…"
+          placeholder="Quick ask..."
           disabled={busy}
           onKeyDown={(e) => {
             if (e.key === "Enter") onSend();
           }}
         />
-        <button onClick={onSend} disabled={busy || !msg.trim()}>
-          ↵
+        <button className="btn btn-primary" onClick={onSend} disabled={busy || !msg.trim()}>
+          Send
         </button>
       </div>
 
       {err && (
-        <div style={{ color: "#ff8a8a", whiteSpace: "pre-wrap" }}>
+        <div className="error-banner" style={{ margin: 0 }}>
           <b>Error:</b> {err}
         </div>
       )}
 
       <div>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>Title</div>
+        <div className="label" style={{ color: "#f6fbfc" }}>
+          Title
+        </div>
         <input
-          style={{ width: "100%" }}
+          className="overlay-input"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Title…"
+          placeholder="Title..."
           disabled={busy}
         />
       </div>
 
       <textarea
-        style={{
-          width: "100%",
-          flex: 1,
-          background: "rgba(0,0,0,0.25)",
-          color: "white",
-          borderRadius: 8,
-        }}
+        className="overlay-area"
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        placeholder="Draft…"
+        placeholder="Draft..."
         disabled={busy}
       />
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button onClick={onApprove} disabled={busy || !draftId}>
-          Approve ✅
+      <div className="overlay-footer">
+        <button className="btn btn-accent" onClick={onApprove} disabled={busy || !draftId}>
+          Approve
         </button>
-
-        <div style={{ fontSize: 12, opacity: 0.9 }}>
-          {approvalId ? (
-            <span style={{ color: "#7CFF7C" }}>Approved</span>
-          ) : (
-            "Not approved"
-          )}
+        <div className={`status-pill ${approvalId ? "status-pill--ok" : ""}`}>
+          {approvalId ? "Approved" : "Not approved"}
         </div>
       </div>
     </div>
