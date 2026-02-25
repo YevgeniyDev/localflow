@@ -1,11 +1,5 @@
 from enum import Enum
 
-class DraftType(str, Enum):
-    email = "email"
-    routine = "routine"
-    code = "code"
-    linkedin = "linkedin"
-
 class DraftStatus(str, Enum):
     drafting = "DRAFTING"
     approved_locked = "APPROVED_LOCKED"

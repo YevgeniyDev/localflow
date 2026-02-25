@@ -9,7 +9,8 @@ from ...services.approval_service import ApprovalService
 router = APIRouter()
 
 class DraftUpdateIn(BaseModel):
-    content: str
+    title: str | None = None
+    content: str | None = None
 
 @router.post("/drafts/{draft_id}/update")
 def update_draft(draft_id: str, inp: DraftUpdateIn, db: Session = Depends(get_db)):
@@ -18,7 +19,12 @@ def update_draft(draft_id: str, inp: DraftUpdateIn, db: Session = Depends(get_db
         raise ValueError("Draft not found")
     if d.status != DraftStatus.drafting.value:
         raise ValueError("Draft is locked (approved)")
-    d.content = inp.content
+
+    if inp.title is not None:
+        d.title = inp.title
+    if inp.content is not None:
+        d.content = inp.content
+
     db.commit()
     return {"ok": True}
 

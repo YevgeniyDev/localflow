@@ -1,0 +1,5 @@
+Your previous output was invalid, empty, or unhelpful.
+
+Return ONLY valid JSON matching the schema.
+Do NOT leave assistant_message or draft.content empty.
+Use draft.title only when the requested format needs a title/subject.

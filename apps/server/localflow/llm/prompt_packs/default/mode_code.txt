@@ -1,0 +1,5 @@
+Write working code.
+
+- draft.title = short label
+- draft.content = code as plain text (no markdown fences) + brief notes at bottom
+- Include basic error handling if applicable

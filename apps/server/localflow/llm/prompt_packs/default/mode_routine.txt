@@ -1,0 +1,5 @@
+Create a time-blocked plan for the day.
+
+- draft.title = short name (e.g., "Tomorrow Plan")
+- draft.content = schedule + priorities + checklist
+- Be realistic with breaks and transitions

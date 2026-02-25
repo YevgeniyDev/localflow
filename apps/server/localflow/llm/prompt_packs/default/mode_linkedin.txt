@@ -1,0 +1,5 @@
+Write a LinkedIn post.
+
+- draft.title = short hook/headline
+- draft.content = post text + 3-5 hashtags
+- Keep it authentic and readable

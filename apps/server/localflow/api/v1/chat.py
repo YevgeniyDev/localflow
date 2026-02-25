@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..deps import get_db, get_llm
@@ -10,31 +10,43 @@ router = APIRouter()
 
 class ChatIn(BaseModel):
     conversation_id: str | None = None
-    mode: str = "email"
     message: str
 
 @router.post("/chat")
 async def chat(inp: ChatIn, db: Session = Depends(get_db), llm=Depends(get_llm)):
-    # Create or load conversation
     if inp.conversation_id:
         conv = db.get(Conversation, inp.conversation_id)
         if not conv:
-            raise ValueError("Conversation not found")
+            raise HTTPException(status_code=404, detail="Conversation not found")
     else:
         conv = Conversation(title="New chat")
         db.add(conv)
         db.commit()
         db.refresh(conv)
 
+    history_rows = (
+        db.query(Message)
+        .filter(Message.conversation_id == conv.id)
+        .order_by(Message.created_at.asc())
+        .all()
+    )
+    history = [{"role": m.role, "content": m.content} for m in history_rows]
+
     db.add(Message(conversation_id=conv.id, role="user", content=inp.message))
     db.commit()
 
-    out = await llm.generate_draft(mode=inp.mode, user_message=inp.message)
+    try:
+        out = await llm.generate_draft(user_message=inp.message, history=history)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=f"LLM generation failed: {str(e)}")
+
+    if not out.draft:
+        raise HTTPException(status_code=502, detail="LLM generation failed: missing draft")
 
     draft = Draft(
         conversation_id=conv.id,
-        type=out.draft.type,
-        title=out.draft.title,
+        type="assistant",
+        title=out.draft.title or "",
         content=out.draft.content,
         status=DraftStatus.drafting.value,
     )
@@ -42,8 +54,11 @@ async def chat(inp: ChatIn, db: Session = Depends(get_db), llm=Depends(get_llm))
     db.commit()
     db.refresh(draft)
 
+    # tool_plan is now a dict or None. Persist only if it matches expected structure.
     if out.tool_plan:
-        ApprovalService(db).upsert_tool_plan(draft, out.tool_plan.model_dump())
+        tool_plan = out.tool_plan.model_dump()
+        if isinstance(tool_plan.get("actions"), list):
+            ApprovalService(db).upsert_tool_plan(draft, tool_plan)
 
     db.add(Message(conversation_id=conv.id, role="assistant", content=out.assistant_message))
     db.commit()
