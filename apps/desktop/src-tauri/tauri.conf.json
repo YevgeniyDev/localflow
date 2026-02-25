@@ -1,0 +1,38 @@
+{
+  "productName": "LocalFlow",
+  "version": "0.1.0",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "LocalFlow",
+        "width": 1100,
+        "height": 720,
+        "resizable": true,
+        "url": "/app"
+      },
+      {
+        "label": "overlay",
+        "title": "LocalFlow Overlay",
+        "width": 420,
+        "height": 560,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "resizable": true,
+        "url": "/overlay"
+      }
+    ]
+  },
+  "plugins": {
+    "global-shortcut": {}
+  }
+}
