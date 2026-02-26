@@ -107,6 +107,7 @@ export type ConversationDetailOut = {
   updated_at?: string | null;
   messages: MessageOut[];
   latest_draft?: DraftOut | null;
+  latest_tool_plan?: any | null;
 };
 
 export async function listConversations(

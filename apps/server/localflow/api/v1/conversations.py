@@ -53,6 +53,7 @@ class ConversationDetailOut(BaseModel):
     created_at: datetime
     messages: List[MessageOut]
     latest_draft: Optional[DraftOut] = None
+    latest_tool_plan: Any | None = None
 
 
 class ExecutionAuditOut(BaseModel):
@@ -196,6 +197,7 @@ def get_conversation(
     )
 
     latest_draft_out: Optional[DraftOut] = None
+    latest_tool_plan: Any | None = None
     if latest_draft:
         latest_draft_out = DraftOut(
             id=latest_draft.id,
@@ -206,12 +208,14 @@ def get_conversation(
             created_at=latest_draft.created_at,
             updated_at=getattr(latest_draft, "updated_at", None),
         )
+        latest_tool_plan = _json_or_raw(latest_draft.tool_plan.json_canonical) if latest_draft.tool_plan else None
 
     return ConversationDetailOut(
         id=c.id,
         created_at=c.created_at,
         messages=[MessageOut(id=m.id, role=m.role, content=m.content, created_at=m.created_at) for m in messages],
         latest_draft=latest_draft_out,
+        latest_tool_plan=latest_tool_plan,
     )
 
 

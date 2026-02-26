@@ -15,15 +15,17 @@ export function Overlay() {
 
   async function onSend() {
     setErr(null);
+    const userText = msg.trim();
+    if (!userText) return;
+    setMsg("");
     setBusy(true);
     try {
-      const out = await chat(msg.trim(), convId);
+      const out = await chat(userText, convId);
       setConvId(out.conversation_id);
       setDraftId(out.draft.id);
       setTitle(out.draft.title ?? "");
       setContent(out.draft.content ?? "");
       setApprovalId(undefined);
-      setMsg("");
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     } finally {

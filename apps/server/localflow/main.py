@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from localflow.api.router import router as api_router
 from localflow.core.config import Settings
+from localflow.llm.gemini import GeminiProvider
 from localflow.llm.ollama import OllamaProvider
 from localflow.llm.prompt_manager import PromptManager
 from localflow.tools import build_registry
@@ -48,17 +49,37 @@ async def lifespan(app: FastAPI):
     app.state.tool_registry = build_registry()
 
     # LLM provider (swappable)
-    base_url = getattr(settings, "ollama_base_url", "http://127.0.0.1:11434")
-    model = getattr(settings, "ollama_model", None)
-    if not model:
-        raise RuntimeError("ollama_model is not configured. Set it in Settings / env.")
+    provider = (getattr(settings, "llm_provider", "ollama") or "ollama").strip().lower()
+    timeout_s = float(getattr(settings, "llm_timeout_s", 120))
 
-    app.state.llm_provider = OllamaProvider(
-        client=http_client,
-        prompt_manager=app.state.prompt_manager,
-        base_url=base_url,
-        model=model,
-    )
+    if provider == "gemini":
+        api_key = getattr(settings, "gemini_api_key", None)
+        model = getattr(settings, "gemini_model", None)
+        if not api_key:
+            raise RuntimeError("gemini_api_key is not configured. Set it in Settings / env.")
+        if not model:
+            raise RuntimeError("gemini_model is not configured. Set it in Settings / env.")
+        app.state.llm_provider = GeminiProvider(
+            client=http_client,
+            prompt_manager=app.state.prompt_manager,
+            api_key=api_key,
+            model=model,
+            timeout_s=timeout_s,
+        )
+    elif provider == "ollama":
+        base_url = getattr(settings, "ollama_base_url", "http://127.0.0.1:11434")
+        model = getattr(settings, "ollama_model", None)
+        if not model:
+            raise RuntimeError("ollama_model is not configured. Set it in Settings / env.")
+        app.state.llm_provider = OllamaProvider(
+            client=http_client,
+            prompt_manager=app.state.prompt_manager,
+            base_url=base_url,
+            model=model,
+            timeout_s=timeout_s,
+        )
+    else:
+        raise RuntimeError(f"Unsupported llm_provider: {provider}")
 
     try:
         yield
@@ -125,6 +146,7 @@ dev_origins = getattr(settings_for_cors, "cors_origins", None) or [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=dev_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
