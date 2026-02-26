@@ -83,8 +83,9 @@ export function App() {
 
   const [history, setHistory] = useState<ConversationListItem[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
+  const [copiedMsgIdx, setCopiedMsgIdx] = useState<number | null>(null);
 
-  const canSend = useMemo(() => !busy && msg.trim().length > 0, [busy, msg]);
+  const canSend = useMemo(() => !busy, [busy]);
   const canApprove = useMemo(() => !busy && !!draftId, [busy, draftId]);
   const canExecute = useMemo(() => !busy && !!approvalId, [busy, approvalId]);
   const browserPlans = useMemo(() => {
@@ -345,6 +346,58 @@ export function App() {
     }
   }
 
+  function previousUserMessage(idx: number): string {
+    for (let i = idx - 1; i >= 0; i -= 1) {
+      if (chatLog[i]?.role === "user") return chatLog[i].content;
+    }
+    return "";
+  }
+
+  async function onCopyAssistant(text: string, idx: number) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedMsgIdx(idx);
+      setTimeout(() => setCopiedMsgIdx((prev) => (prev === idx ? null : prev)), 1400);
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    }
+  }
+
+  async function onRegenerateAssistant(idx: number) {
+    const userText = previousUserMessage(idx).trim();
+    if (!userText || !convId) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const out = await chat(userText, convId);
+      setConvId(out.conversation_id);
+      const assistantText = out.assistant_message ?? "";
+      if (assistantText) {
+        setChatLog((prev) =>
+          prev.map((m, i) =>
+            i === idx && m.role === "assistant" ? { role: "assistant", content: assistantText } : m,
+          ),
+        );
+      }
+      if (out.draft) {
+        const titleless = isTitlelessIntent(userText);
+        const needsTitleFromPrompt = inferNeedsTitleInput(userText);
+        setDraftId(out.draft.id);
+        setDraftTitle(out.draft.title ?? "");
+        setDraftBody(out.draft.content ?? "");
+        setNeedsTitleInput(!titleless && (!!(out.draft.title ?? "").trim() || needsTitleFromPrompt));
+        setShowDraftStudio(shouldOpenDraftStudio(userText, out.draft, out.tool_plan));
+        setToolPlan(out.tool_plan);
+        setApprovalId(undefined);
+      }
+      refreshHistory();
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="app-shell app-shell--no-draft">
       <aside className="panel sidebar-panel">
@@ -405,6 +458,71 @@ export function App() {
                   }`}
                 >
                   <div className="chat-msg__content">{m.content}</div>
+                  {m.role === "assistant" && (
+                    <div className="chat-msg__actions">
+                      <button
+                        className="chat-action-btn chat-action-btn--icon"
+                        onClick={() => onCopyAssistant(m.content, idx)}
+                        disabled={busy}
+                        aria-label="Copy response"
+                        data-tooltip={copiedMsgIdx === idx ? "Copied" : "Copy"}
+                      >
+                        <span className="chat-action-btn__icon" aria-hidden="true">
+                          {copiedMsgIdx === idx ? (
+                            <svg
+                              viewBox="0 0 24 24"
+                              width="16"
+                              height="16"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M20 6 9 17l-5-5" />
+                            </svg>
+                          ) : (
+                            <svg
+                              viewBox="0 0 24 24"
+                              width="16"
+                              height="16"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <rect x="9" y="9" width="11" height="11" rx="2" />
+                              <rect x="4" y="4" width="11" height="11" rx="2" />
+                            </svg>
+                          )}
+                        </span>
+                      </button>
+                      <button
+                        className="chat-action-btn chat-action-btn--icon"
+                        onClick={() => onRegenerateAssistant(idx)}
+                        disabled={busy || !previousUserMessage(idx)}
+                        aria-label="Regenerate response"
+                        data-tooltip="Try again"
+                      >
+                        <span className="chat-action-btn__icon" aria-hidden="true">
+                          <svg
+                            viewBox="0 0 24 24"
+                            width="16"
+                            height="16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                            <path d="M21 3v6h-6" />
+                          </svg>
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </article>
               ))}
               {showDraftStudio && (
@@ -517,8 +635,8 @@ export function App() {
                 if (e.key === "Enter") onSend();
               }}
             />
-            <button className="btn btn-primary" onClick={onSend} disabled={!canSend}>
-              Send
+            <button className="btn btn-primary" onClick={onSend} disabled={!canSend} aria-label={busy ? "Sending" : "Send"}>
+              {busy ? <span className="btn-spinner" aria-hidden="true" /> : "Send"}
             </button>
           </div>
         </div>
@@ -527,3 +645,4 @@ export function App() {
     </div>
   );
 }
+

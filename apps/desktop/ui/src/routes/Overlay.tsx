@@ -65,8 +65,13 @@ export function Overlay() {
             if (e.key === "Enter") onSend();
           }}
         />
-        <button className="btn btn-primary" onClick={onSend} disabled={busy || !msg.trim()}>
-          Send
+        <button
+          className="btn btn-primary"
+          onClick={onSend}
+          disabled={busy}
+          aria-label={busy ? "Sending" : "Send"}
+        >
+          {busy ? <span className="btn-spinner" aria-hidden="true" /> : "Send"}
         </button>
       </div>
 

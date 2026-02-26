@@ -131,7 +131,21 @@ body {
   color: #fff;
 }
 
+.btn-spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 0 auto;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  animation: spin 0.8s linear infinite;
+}
+
 .composer .btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 42px;
   min-height: 42px;
   height: 42px;
@@ -243,6 +257,76 @@ body {
 .chat-msg--assistant .chat-msg__content {
   max-width: min(90%, 860px);
   color: #efefef;
+}
+
+.chat-msg__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chat-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2b2b2b;
+  border: 1px solid #3b3b3b;
+  color: #d5d5d5;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 7px;
+  min-width: 32px;
+  min-height: 32px;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.chat-action-btn:hover:not(:disabled) {
+  color: #ffffff;
+  background: #363636;
+  border-color: #505050;
+  transform: translateY(-1px);
+}
+
+.chat-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-action-btn__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.chat-action-btn--icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) translateY(-2px);
+  opacity: 0;
+  pointer-events: none;
+  background: #0f0f10;
+  color: #ffffff;
+  border: 1px solid #2b2c30;
+  border-radius: 10px;
+  padding: 5px 8px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 12;
+}
+
+.chat-action-btn--icon:hover:not(:disabled)::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .chat-footer {
@@ -411,6 +495,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 1100px) {
