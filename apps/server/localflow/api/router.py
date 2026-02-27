@@ -7,6 +7,7 @@ from localflow.api.v1.chat import router as chat_router
 from localflow.api.v1.drafts import router as drafts_router
 from localflow.api.v1.executions import router as executions_router
 from localflow.api.v1.conversations import router as conversations_router
+from localflow.api.v1.rag import router as rag_router
 
 router = APIRouter()
 
@@ -18,5 +19,6 @@ v1.include_router(chat_router)
 v1.include_router(drafts_router)
 v1.include_router(executions_router)
 v1.include_router(conversations_router)
+v1.include_router(rag_router)
 
 router.include_router(v1)

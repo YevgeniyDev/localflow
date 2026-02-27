@@ -7,10 +7,23 @@ import {
   execute,
   getConversation,
   listConversations,
+  ragBuildIndex,
+  ragListDirs,
+  ragListDrives,
+  ragListPermissions,
+  ragStatus,
+  ragSetPermissions,
   updateDraft,
 } from "../lib/api";
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
+type RagConfigSnapshot = {
+  baseAccess: "full" | "disks" | "advanced";
+  selectedDisks: Record<string, boolean>;
+  advancedPaths: string[];
+};
+
+const RAG_CONFIG_STORAGE_KEY = "localflow.fileSearch.config.v1";
 
 function safeString(x: any): string {
   return typeof x === "string" ? x : x == null ? "" : String(x);
@@ -31,12 +44,31 @@ function inferNeedsTitleInput(userText: string): boolean {
   return /\b(email|mail|subject|cover letter|letter)\b/.test(text);
 }
 
+function isRagLikeIntent(userText: string): boolean {
+  const text = (userText || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/\breadme\b/.test(text)) return true;
+  if (/\b\w+\.(txt|md|pdf|doc|docx|ppt|pptx|xls|xlsx|csv|json|py|ts|js|cpp|c|java|go|rs)\b/.test(text)) {
+    return true;
+  }
+  if (/\b(find|search|locate|lookup|look up)\b/.test(text) && /\b(for|about)\b/.test(text)) {
+    return true;
+  }
+  return (
+    /\b(find|search|scan|lookup|look up|read|summarize|open)\b/.test(text) &&
+    /\b(file|files|document|documents|folder|directory|local|pc|computer|disk|drive|pdf|docx|txt)\b/.test(
+      text,
+    )
+  );
+}
+
 function shouldOpenDraftStudio(
   userText: string,
   draft: { title?: string | null; content?: string | null } | null | undefined,
   toolPlan: any,
 ): boolean {
   const text = (userText || "").trim().toLowerCase();
+  if (isRagLikeIntent(text)) return false;
   const hasToolActions = Array.isArray(toolPlan?.actions) && toolPlan.actions.length > 0;
   if (hasToolActions) return true;
 
@@ -84,6 +116,18 @@ export function App() {
   const [history, setHistory] = useState<ConversationListItem[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [copiedMsgIdx, setCopiedMsgIdx] = useState<number | null>(null);
+  const [fileSearchInProgress, setFileSearchInProgress] = useState(false);
+  const [fileSearchMode, setFileSearchMode] = useState(false);
+  const [showRagPermissionModal, setShowRagPermissionModal] = useState(false);
+  const [ragAvailableDrives, setRagAvailableDrives] = useState<string[]>([]);
+  const [ragBaseAccess, setRagBaseAccess] = useState<"full" | "disks" | "advanced">("disks");
+  const [ragSelectedDisks, setRagSelectedDisks] = useState<Record<string, boolean>>({});
+  const [ragAdvancedPaths, setRagAdvancedPaths] = useState<string[]>([]);
+  const [ragRootDirs, setRagRootDirs] = useState<string[]>([]);
+  const [ragTreeChildren, setRagTreeChildren] = useState<Record<string, string[]>>({});
+  const [ragTreeExpanded, setRagTreeExpanded] = useState<Record<string, boolean>>({});
+  const [ragConfigBusy, setRagConfigBusy] = useState(false);
+  const [fileSearchScopeSummary, setFileSearchScopeSummary] = useState("");
 
   const canSend = useMemo(() => !busy, [busy]);
   const canApprove = useMemo(() => !busy && !!draftId, [busy, draftId]);
@@ -181,6 +225,18 @@ export function App() {
     refreshHistory();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const out = await ragListPermissions();
+        const roots = out.roots ?? [];
+        setFileSearchScopeSummary(formatScopeSummary(roots));
+      } catch {
+        // non-blocking
+      }
+    })();
+  }, []);
+
   function onNewChat() {
     setErr(null);
     setConvId(undefined);
@@ -196,6 +252,295 @@ export function App() {
     setAllowHighRiskBrowser(false);
     setNeedsTitleInput(false);
     setShowDraftStudio(false);
+    setFileSearchMode(false);
+    setShowRagPermissionModal(false);
+    setRagAvailableDrives([]);
+    setRagBaseAccess("disks");
+    setRagSelectedDisks({});
+    setRagAdvancedPaths([]);
+    setRagRootDirs([]);
+    setRagTreeChildren({});
+    setRagTreeExpanded({});
+    setRagConfigBusy(false);
+    setFileSearchInProgress(false);
+  }
+
+  async function refreshDirBrowserRoots() {
+    try {
+      const out = await ragListDirs(null);
+      const dirs = out.dirs ?? [];
+      setRagRootDirs(dirs);
+      setRagTreeChildren({});
+      setRagTreeExpanded({});
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    }
+  }
+
+  async function toggleFolder(path: string) {
+    if (ragTreeExpanded[path]) {
+      setRagTreeExpanded((prev) => ({ ...prev, [path]: false }));
+      return;
+    }
+    if (!ragTreeChildren[path]) {
+      try {
+        const out = await ragListDirs(path);
+        setRagTreeChildren((prev) => ({ ...prev, [path]: out.dirs ?? [] }));
+      } catch (e: any) {
+        setErr(String(e?.message ?? e));
+        return;
+      }
+    }
+    setRagTreeExpanded((prev) => ({ ...prev, [path]: true }));
+  }
+
+  function addAdvancedPath(path: string) {
+    const p = path.trim();
+    if (!p) return;
+    setRagAdvancedPaths((prev) => (prev.includes(p) ? prev : [...prev, p]));
+  }
+
+  function removeAdvancedPath(path: string) {
+    setRagAdvancedPaths((prev) => prev.filter((p) => p !== path));
+  }
+
+  function folderLabel(path: string): string {
+    const p = (path || "").replace(/[\\/]+$/, "");
+    const m = p.match(/[^\\/]+$/);
+    if (m && m[0]) return m[0];
+    return path;
+  }
+
+  function compactPathByFolders(path: string, maxChars = 40): string {
+    const raw = (path || "").trim();
+    if (!raw) return raw;
+    if (raw.length <= maxChars) return raw;
+
+    const parts = raw.split(/[\\/]+/).filter((p) => p.length > 0);
+    if (parts.length === 0) return raw;
+    const last = parts[parts.length - 1];
+    if (last.length + 4 >= maxChars) return `...\\${last}`;
+
+    let out = last;
+    for (let i = parts.length - 2; i >= 0; i -= 1) {
+      const candidate = `${parts[i]}\\${out}`;
+      if (`...\\${candidate}`.length > maxChars) break;
+      out = candidate;
+    }
+    return `...\\${out}`;
+  }
+
+  function loadSavedRagConfig(): RagConfigSnapshot | null {
+    try {
+      const raw = localStorage.getItem(RAG_CONFIG_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      const baseAccess =
+        parsed.baseAccess === "full" || parsed.baseAccess === "disks" || parsed.baseAccess === "advanced"
+          ? parsed.baseAccess
+          : "disks";
+      const selectedDisks =
+        parsed.selectedDisks && typeof parsed.selectedDisks === "object" ? parsed.selectedDisks : {};
+      const advancedPaths = Array.isArray(parsed.advancedPaths)
+        ? parsed.advancedPaths.filter((x: any) => typeof x === "string" && x.trim())
+        : [];
+      return { baseAccess, selectedDisks, advancedPaths };
+    } catch {
+      return null;
+    }
+  }
+
+  function saveRagConfigSnapshot(snapshot: RagConfigSnapshot) {
+    try {
+      localStorage.setItem(RAG_CONFIG_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // non-blocking
+    }
+  }
+
+  async function openFileSearchSetupModal() {
+    setErr(null);
+    try {
+      const [drivesOut, permsOut] = await Promise.all([ragListDrives(), ragListPermissions()]);
+      const drives = drivesOut.drives ?? [];
+      const roots = permsOut.roots ?? [];
+      const saved = loadSavedRagConfig();
+      const diskMap: Record<string, boolean> = {};
+      for (const d of drives) {
+        diskMap[d] = roots.some((r) => r.toLowerCase().startsWith(d.toLowerCase()));
+      }
+      setRagAvailableDrives(drives);
+      if (saved) {
+        const selectedMap: Record<string, boolean> = {};
+        for (const d of drives) selectedMap[d] = !!saved.selectedDisks[d];
+        setRagBaseAccess(saved.baseAccess);
+        setRagSelectedDisks(selectedMap);
+        setRagAdvancedPaths(saved.advancedPaths);
+      } else {
+        setRagSelectedDisks(diskMap);
+        if (roots.length && roots.every((r) => drives.some((d) => r.toLowerCase().startsWith(d.toLowerCase())))) {
+          if (drives.length && drives.every((d) => diskMap[d])) {
+            setRagBaseAccess("full");
+          } else {
+            setRagBaseAccess("disks");
+          }
+          setRagAdvancedPaths([]);
+        } else {
+          setRagBaseAccess("advanced");
+          setRagAdvancedPaths(roots);
+        }
+      }
+      setShowRagPermissionModal(true);
+      await refreshDirBrowserRoots();
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    }
+  }
+
+  function sameRootSets(a: string[], b: string[]): boolean {
+    const aa = [...a].map((x) => x.toLowerCase()).sort();
+    const bb = [...b].map((x) => x.toLowerCase()).sort();
+    if (aa.length !== bb.length) return false;
+    for (let i = 0; i < aa.length; i += 1) {
+      if (aa[i] !== bb[i]) return false;
+    }
+    return true;
+  }
+
+  function formatScopeSummary(roots: string[]): string {
+    if (!roots.length) return "";
+    const unique = Array.from(new Set(roots.map((r) => r.trim()).filter((r) => r.length > 0)));
+    const drives = unique.filter((r) => /^[a-zA-Z]:\\?$/.test(r));
+    if (drives.length === unique.length) {
+      return drives.join(" + ");
+    }
+    const compact = unique.slice(0, 3);
+    if (unique.length > 3) compact.push(`+${unique.length - 3} more`);
+    return compact.join(" + ");
+  }
+
+  async function onApproveRagPermission() {
+    setErr(null);
+    setRagConfigBusy(true);
+    try {
+      let roots: string[] = [];
+      if (ragBaseAccess === "full") {
+        roots = [...ragAvailableDrives];
+      } else if (ragBaseAccess === "disks") {
+        roots = ragAvailableDrives.filter((d) => !!ragSelectedDisks[d]);
+      } else {
+        roots = ragAdvancedPaths.map((x) => x.trim()).filter((x) => x.length > 0);
+      }
+      if (!roots.length) {
+        setErr("Select at least one disk or folder.");
+        return;
+      }
+      const status = await ragStatus();
+      const indexedRoots = Array.isArray(status?.index_meta?.roots) ? status.index_meta.roots : [];
+      const indexReady = !!status?.index_exists && sameRootSets(roots, indexedRoots);
+      await ragSetPermissions(roots);
+      if (!indexReady) {
+        await ragBuildIndex(2500, roots);
+      }
+      setShowRagPermissionModal(false);
+      setFileSearchMode(true);
+      setFileSearchScopeSummary(formatScopeSummary(roots));
+      saveRagConfigSnapshot({
+        baseAccess: ragBaseAccess,
+        selectedDisks: ragSelectedDisks,
+        advancedPaths: ragAdvancedPaths,
+      });
+      setChatLog((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "File Search mode is enabled and searchable folders are configured. You can now ask file search queries.",
+        },
+      ]);
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setRagConfigBusy(false);
+    }
+  }
+
+  function onRejectRagPermission() {
+    setShowRagPermissionModal(false);
+    setFileSearchMode(false);
+    setChatLog((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content:
+          "Understood. I couldn't access local files without your permission. Do you want to try again or do you have other questions?",
+      },
+    ]);
+  }
+
+  function renderFolderTree(nodes: string[], level = 0): React.ReactNode {
+    return nodes.map((dir) => {
+      const children = ragTreeChildren[dir] ?? [];
+      const expanded = !!ragTreeExpanded[dir];
+      const indent = Math.min(level * 14, 84);
+      return (
+        <React.Fragment key={dir}>
+          <div
+            className="permission-browser__row"
+            style={{ paddingLeft: `${indent}px` }}
+            onClick={() => toggleFolder(dir)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                toggleFolder(dir);
+              }
+            }}
+            aria-label={expanded ? "Collapse folder row" : "Expand folder row"}
+          >
+            <button
+              className="permission-browser__toggle"
+              type="button"
+              onClick={() => toggleFolder(dir)}
+              disabled={ragConfigBusy}
+              aria-label={expanded ? "Collapse folder" : "Expand folder"}
+              title={expanded ? "Collapse folder" : "Expand folder"}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                {expanded ? <path d="m6 9 6 6 6-6" /> : <path d="m9 6 6 6-6 6" />}
+              </svg>
+            </button>
+            <span className="permission-browser__dir">{folderLabel(dir)}</span>
+            <button
+              className="permission-browser__add"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                addAdvancedPath(dir);
+              }}
+              disabled={ragConfigBusy}
+              data-tooltip="Allow this folder"
+              aria-label="Allow access to this folder"
+            >
+              +
+            </button>
+          </div>
+          {expanded && children.length > 0 && renderFolderTree(children, level + 1)}
+        </React.Fragment>
+      );
+    });
   }
 
   async function onSend() {
@@ -203,20 +548,27 @@ export function App() {
     const userText = msg.trim();
     if (!userText) return;
     setMsg("");
+    const forceFileSearch = fileSearchMode;
+    setFileSearchInProgress(forceFileSearch);
     setBusy(true);
     try {
       const titleless = isTitlelessIntent(userText);
       const needsTitleFromPrompt = inferNeedsTitleInput(userText);
       setChatLog((prev) => [...prev, { role: "user", content: userText }]);
 
-      const out = await chat(userText, convId);
+      const out = await chat(userText, convId, { forceFileSearch });
 
       setConvId(out.conversation_id);
       setDraftId(out.draft.id);
       setDraftTitle(out.draft.title ?? "");
       setDraftBody(out.draft.content ?? "");
       setNeedsTitleInput(!titleless && (!!(out.draft.title ?? "").trim() || needsTitleFromPrompt));
-      setShowDraftStudio(shouldOpenDraftStudio(userText, out.draft, out.tool_plan));
+      const hasRagHits = Array.isArray(out.rag_hits) && out.rag_hits.length > 0;
+      setShowDraftStudio(
+        !out.rag_permission_required &&
+          !hasRagHits &&
+          shouldOpenDraftStudio(userText, out.draft, out.tool_plan),
+      );
 
       setToolPlan(out.tool_plan);
       setApprovalId(undefined);
@@ -228,11 +580,23 @@ export function App() {
       if (assistantText) {
         setChatLog((prev) => [...prev, { role: "assistant", content: assistantText }]);
       }
+      if (out.rag_permission_required) {
+        await openFileSearchSetupModal();
+        const suggested = (out.rag_suggested_path ?? "").trim();
+        if (suggested) {
+          setRagBaseAccess("advanced");
+          setRagAdvancedPaths([suggested]);
+        }
+        setShowDraftStudio(false);
+      } else {
+        setShowRagPermissionModal(false);
+      }
       refreshHistory();
     } catch (e: any) {
       setErr(String(e?.message ?? e));
     } finally {
       setBusy(false);
+      setFileSearchInProgress(false);
     }
   }
 
@@ -367,9 +731,11 @@ export function App() {
     const userText = previousUserMessage(idx).trim();
     if (!userText || !convId) return;
     setErr(null);
+    const forceFileSearch = fileSearchMode;
+    setFileSearchInProgress(forceFileSearch);
     setBusy(true);
     try {
-      const out = await chat(userText, convId);
+      const out = await chat(userText, convId, { forceFileSearch });
       setConvId(out.conversation_id);
       const assistantText = out.assistant_message ?? "";
       if (assistantText) {
@@ -382,11 +748,16 @@ export function App() {
       if (out.draft) {
         const titleless = isTitlelessIntent(userText);
         const needsTitleFromPrompt = inferNeedsTitleInput(userText);
+        const hasRagHits = Array.isArray(out.rag_hits) && out.rag_hits.length > 0;
         setDraftId(out.draft.id);
         setDraftTitle(out.draft.title ?? "");
         setDraftBody(out.draft.content ?? "");
         setNeedsTitleInput(!titleless && (!!(out.draft.title ?? "").trim() || needsTitleFromPrompt));
-        setShowDraftStudio(shouldOpenDraftStudio(userText, out.draft, out.tool_plan));
+        setShowDraftStudio(
+          !out.rag_permission_required &&
+            !hasRagHits &&
+            shouldOpenDraftStudio(userText, out.draft, out.tool_plan),
+        );
         setToolPlan(out.tool_plan);
         setApprovalId(undefined);
       }
@@ -395,6 +766,7 @@ export function App() {
       setErr(String(e?.message ?? e));
     } finally {
       setBusy(false);
+      setFileSearchInProgress(false);
     }
   }
 
@@ -619,6 +991,35 @@ export function App() {
         </div>
 
         <div className="chat-footer">
+          <div className="composer-modes">
+            <button
+              className={`mode-chip ${fileSearchMode ? "mode-chip--active" : ""}`}
+              onClick={() => {
+                if (fileSearchMode) {
+                  setFileSearchMode(false);
+                } else {
+                  openFileSearchSetupModal();
+                }
+              }}
+              disabled={busy}
+              type="button"
+            >
+              File Search
+            </button>
+            {fileSearchMode && fileSearchScopeSummary && (
+              <div className="mode-scope-summary">
+                File Search: {fileSearchScopeSummary}
+              </div>
+            )}
+          </div>
+          {fileSearchInProgress && (
+            <div className="search-progress">
+              <div className="search-progress__label">Searching local files...</div>
+              <div className="search-progress__bar">
+                <div className="search-progress__indeterminate" />
+              </div>
+            </div>
+          )}
           {err && (
             <div className="error-banner">
               <b>Error:</b> {err}
@@ -641,6 +1042,131 @@ export function App() {
           </div>
         </div>
       </section>
+
+      {showRagPermissionModal && (
+        <div className="permission-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="permission-modal">
+            {ragConfigBusy && (
+              <div className="permission-modal__overlay">
+                <div className="permission-modal__overlay-card">
+                  <span className="btn-spinner" aria-hidden="true" />
+                  <span>Applying permissions...</span>
+                </div>
+              </div>
+            )}
+            <div className="permission-modal__title">Configure File Search Access</div>
+            <div className="permission-modal__text">
+              Select what LocalFlow is allowed to search.
+            </div>
+            <label className="permission-option">
+              <input
+                type="radio"
+                name="base-access"
+                checked={ragBaseAccess === "full"}
+                onChange={() => setRagBaseAccess("full")}
+                disabled={busy}
+              />{" "}
+              Full access (all detected disks)
+            </label>
+            <label className="permission-option">
+              <input
+                type="radio"
+                name="base-access"
+                checked={ragBaseAccess === "disks"}
+                onChange={() => setRagBaseAccess("disks")}
+                disabled={busy}
+              />{" "}
+              Disk-only selection
+            </label>
+            {ragBaseAccess === "disks" && (
+              <div className="permission-disk-list">
+                {ragAvailableDrives.map((d) => (
+                  <label key={d} className="permission-option permission-option--sub">
+                    <input
+                      type="checkbox"
+                      checked={!!ragSelectedDisks[d]}
+                      onChange={(e) => setRagSelectedDisks((prev) => ({ ...prev, [d]: e.target.checked }))}
+                      disabled={busy}
+                    />{" "}
+                    {d}
+                  </label>
+                ))}
+              </div>
+            )}
+            <label className="permission-option">
+              <input
+                type="radio"
+                name="base-access"
+                checked={ragBaseAccess === "advanced"}
+                onChange={() => setRagBaseAccess("advanced")}
+                disabled={busy}
+              />{" "}
+              Advanced folder paths
+              <span
+                className="help-hint"
+                data-tooltip="Click the arrow to open folders. Click + to allow that folder."
+                aria-label="How to use advanced folder selection"
+              >
+                ?
+              </span>
+            </label>
+            {ragBaseAccess === "advanced" && (
+              <div className="permission-tags">
+                {ragAdvancedPaths.length === 0 && (
+                  <div className="permission-tags__empty">No folders selected yet. Use + in browser below.</div>
+                )}
+                {ragAdvancedPaths.map((p) => (
+                  <span key={p} className="permission-tag">
+                    <span className="permission-tag__text">{compactPathByFolders(p)}</span>
+                    <button
+                      className="permission-tag__remove"
+                      type="button"
+                      onClick={() => removeAdvancedPath(p)}
+                      disabled={busy || ragConfigBusy}
+                      aria-label="Remove folder path"
+                      data-tooltip="Remove folder"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="12"
+                        height="12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {ragBaseAccess === "advanced" && (
+              <div className="permission-browser">
+                <div className="permission-browser__header">
+                  <span>Browse folders</span>
+                </div>
+                <div className="permission-browser__path">Drives and folders</div>
+                <div className="permission-browser__list">
+                  {renderFolderTree(ragRootDirs)}
+                </div>
+              </div>
+            )}
+            <div className="permission-modal__actions">
+              <button className="btn btn-accent" onClick={onApproveRagPermission} disabled={busy || ragConfigBusy}>
+                Save & Enable
+              </button>
+              <button className="btn" onClick={onRejectRagPermission} disabled={busy || ragConfigBusy}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

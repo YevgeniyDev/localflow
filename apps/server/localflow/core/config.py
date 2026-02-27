@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # Prompt packs (directory-based, editable without code changes)
     prompt_pack_dir: str = "localflow/llm/prompt_packs/default"
 
+    # Local RAG storage/index settings
+    rag_store_dir: str = ".localflow_rag"
+    rag_chunk_size: int = 1200
+    rag_chunk_overlap: int = 200
+    rag_embedding_dim: int = 384
+
     # Security for future remote access
     api_key: str | None = None
 

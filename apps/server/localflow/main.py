@@ -14,6 +14,7 @@ from localflow.core.config import Settings
 from localflow.llm.gemini import GeminiProvider
 from localflow.llm.ollama import OllamaProvider
 from localflow.llm.prompt_manager import PromptManager
+from localflow.rag import RagService
 from localflow.tools import build_registry
 
 log = logging.getLogger("localflow")
@@ -47,6 +48,14 @@ async def lifespan(app: FastAPI):
 
     # Tool registry (gated execution later)
     app.state.tool_registry = build_registry()
+
+    # Local RAG service (permissioned local file retrieval)
+    app.state.rag_service = RagService(
+        store_dir=getattr(settings, "rag_store_dir", ".localflow_rag"),
+        chunk_size=int(getattr(settings, "rag_chunk_size", 1200)),
+        chunk_overlap=int(getattr(settings, "rag_chunk_overlap", 200)),
+        embedding_dim=int(getattr(settings, "rag_embedding_dim", 384)),
+    )
 
     # LLM provider (swappable)
     provider = (getattr(settings, "llm_provider", "ollama") or "ollama").strip().lower()

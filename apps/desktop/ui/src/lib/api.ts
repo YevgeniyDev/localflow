@@ -12,6 +12,7 @@ async function readError(r: Response): Promise<string> {
 export async function chat(
   message: string,
   conversationId?: string,
+  options?: { forceFileSearch?: boolean },
 ) {
   const r = await fetch(`${BASE}/chat`, {
     method: "POST",
@@ -19,6 +20,7 @@ export async function chat(
     body: JSON.stringify({
       message,
       conversation_id: conversationId ?? null,
+      force_file_search: !!options?.forceFileSearch,
     }),
   });
   if (!r.ok) throw new Error(await readError(r));
@@ -133,6 +135,67 @@ export async function getConversation(
       method: "GET",
     },
   );
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json();
+}
+
+export async function ragGrantPermission(path: string) {
+  const r = await fetch(`${BASE}/rag/permissions/grant`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json();
+}
+
+export async function ragBuildIndex(maxFiles = 1500, roots?: string[]) {
+  const r = await fetch(`${BASE}/rag/index`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      max_files: maxFiles,
+      roots: roots ?? null,
+    }),
+  });
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json();
+}
+
+export async function ragListPermissions(): Promise<{ roots: string[] }> {
+  const r = await fetch(`${BASE}/rag/permissions`, { method: "GET" });
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json();
+}
+
+export async function ragListDrives(): Promise<{ drives: string[] }> {
+  const r = await fetch(`${BASE}/rag/drives`, { method: "GET" });
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json();
+}
+
+export async function ragSetPermissions(roots: string[]) {
+  const r = await fetch(`${BASE}/rag/permissions/set`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roots }),
+  });
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json();
+}
+
+export async function ragStatus() {
+  const r = await fetch(`${BASE}/rag/status`, { method: "GET" });
+  if (!r.ok) throw new Error(await readError(r));
+  return r.json();
+}
+
+export async function ragListDirs(path?: string | null): Promise<{ dirs: string[] }> {
+  const r = await fetch(`${BASE}/rag/list_dirs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: path ?? null }),
+  });
   if (!r.ok) throw new Error(await readError(r));
   return r.json();
 }

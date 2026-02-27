@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class ChatIn(BaseModel):
     conversation_id: str | None = None
     message: str
+    force_file_search: bool = False
 
 
 class DraftOut(BaseModel):
@@ -23,6 +24,10 @@ class ChatOut(BaseModel):
     assistant_message: str
     draft: DraftOut
     tool_plan: dict[str, Any] | None = None
+    rag_hits: list[dict[str, Any]] | None = None
+    rag_permission_required: bool = False
+    rag_permission_message: str | None = None
+    rag_suggested_path: str | None = None
 
 
 class DraftUpdateIn(BaseModel):

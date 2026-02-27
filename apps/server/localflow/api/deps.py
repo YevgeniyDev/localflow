@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from ..storage.db import SessionLocal
 from ..llm.provider import LLMProvider
 from ..tools.registry import ToolRegistry
+from ..rag.service import RagService
 
 def get_db():
     db = SessionLocal()
@@ -16,3 +17,7 @@ def get_llm(request: Request) -> LLMProvider:
 
 def get_tools(request: Request) -> ToolRegistry:
     return request.app.state.tool_registry
+
+
+def get_rag(request: Request) -> RagService:
+    return request.app.state.rag_service
