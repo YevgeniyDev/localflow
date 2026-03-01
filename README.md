@@ -9,28 +9,23 @@ LocalFlow is a local-first AI assistant with a chat UI, draft approval gate, and
 - Desktop shell: Tauri scaffolding exists (`apps/desktop/src-tauri`) for future packaging.
 - Primary runtime today: local dev via Vite + FastAPI + Ollama.
 
-## Implemented Features
+## Major Implemented Features
 
-### Chat + Drafting
+### Conversational Chat + Conditional Drafting
 
 - Conversational chat per conversation thread.
-- Assistant response is persisted as a draft on every turn.
-- Inline Draft Studio appears in chat only when relevant (task/deliverable intent or tool actions), not for generic conversational Q&A.
+- Draft generation is conditional:
+  - Draft Studio appears only for deliverable-style requests (email/post/reply/code-style outputs).
+  - Generic Q&A stays in plain chat flow (no draft workflow forced).
 - Draft fields:
   - `title` (shown when needed, e.g. email-like requests)
   - `content`
 - Conversation history list with previews and reload support.
 - Conversation detail restores latest draft + latest tool plan.
 
-### Assistant Message UX
+### Approval Gate + Audited Execution
 
-- Copy assistant response (icon button + tooltip).
-- Regenerate assistant response (icon button + tooltip).
-- Regenerate replaces that assistant message in place.
-
-### Approval Gate + Execution
-
-- User can edit draft, then approve (`Approve`) to create hash-locked approval.
+- User edits draft, then approves (`Approve`) to create hash-locked approval.
 - Execution is blocked unless:
   - draft hash matches approved hash,
   - tool plan hash matches approved hash,
@@ -44,12 +39,17 @@ LocalFlow is a local-first AI assistant with a chat UI, draft approval gate, and
 - `browser_search`
 - `browser_automation`
 
-### Local RAG (Permissioned File Search)
+### Permissioned Local File Search (RAG)
 
-- Local folder permission model (`/v1/rag/permissions/*`).
-- Local chunk index (JSONL) built only from approved folders.
-- Chat automatically uses top local hits as context when available.
-- Assistant responses include a `Sources:` list when RAG context is used.
+- Explicit File Search mode in chat input.
+- Permission-first workflow before local disk access:
+  - full access,
+  - disk-only access,
+  - advanced folder-path access.
+- Permission scope is saved and can be reused on next enable.
+- Local index is built only from approved roots and reused when scope is unchanged.
+- File search can run as broad scan across approved roots (without requiring a folder hint).
+- Search pipeline includes noise filtering (e.g., `node_modules`, `.git`, virtual env/build artifacts) and stronger filename/path token matching.
 
 ### Tool Policy Enforcement
 
@@ -64,16 +64,9 @@ LocalFlow is a local-first AI assistant with a chat UI, draft approval gate, and
 
 - URL sanitization before persisting/executing `open_links` actions.
 - Prevents trusting model-guessed LinkedIn profile slugs unless user supplied an explicit URL.
-- If needed, falls back to safe generic behavior:
+- If needed, falls back to safer generic behavior:
   - `browser_search` with normalized query
   - optional Google search URL in `open_links`
-
-### UI/Design State
-
-- ChatGPT-inspired dark layout and chat composer.
-- Send button has loading spinner while request is in-flight.
-- Send remains clickable-looking when idle; empty sends are ignored by handler.
-- Dark rounded custom scrollbars across major scrollable surfaces.
 
 ## Architecture
 
@@ -108,6 +101,9 @@ Base URL: `http://127.0.0.1:7878/v1`
 - `GET /rag/permissions`
 - `POST /rag/permissions/grant`
 - `POST /rag/permissions/revoke`
+- `POST /rag/permissions/set`
+- `GET /rag/drives`
+- `POST /rag/list_dirs`
 - `GET /rag/status`
 - `POST /rag/index`
 - `POST /rag/search`
@@ -202,6 +198,19 @@ Try retrieval:
 curl -X POST http://127.0.0.1:7878/v1/rag/search -H "Content-Type: application/json" -d "{\"query\":\"project roadmap\",\"top_k\":5}"
 ```
 
+Explore drives and directories for permission setup:
+
+```powershell
+curl http://127.0.0.1:7878/v1/rag/drives
+curl -X POST http://127.0.0.1:7878/v1/rag/list_dirs -H "Content-Type: application/json" -d "{\"path\":\"C:\\\\Users\"}"
+```
+
+Set permission scope in one request:
+
+```powershell
+curl -X POST http://127.0.0.1:7878/v1/rag/permissions/set -H "Content-Type: application/json" -d "{\"paths\":[\"C:\\\\Users\\\\123\\\\Downloads\",\"D:\\\\Projects\"]}"
+```
+
 ## Test / Validation
 
 Server tests:
@@ -220,7 +229,7 @@ npm run build
 
 ## Near-Term Next Steps
 
-- Improve tool-result grounding so assistant responses cite concrete found links more reliably.
-- Add richer browser automation result surfaces in UI (step-by-step outcome cards).
-- Add integration tests around tool-plan normalization and per-action confirmation flows.
-- Package desktop runtime via Tauri once web UX is finalized.
+- Improve ranking quality for ambiguous file names across very large approved roots.
+- Add incremental/background re-index scheduling for large local corpora.
+- Expand execution tests for file-search mode + permission transitions.
+- Package desktop runtime via Tauri once web workflow is finalized.
